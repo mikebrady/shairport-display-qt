@@ -25,33 +25,36 @@ A UI that displays the current track for shairport-sync is an obvious need for a
 
 ## Changes
 
-* Modification of QT Display to all black background by default.
-* Addition of Previous / Play / Pause / Next buttons in Qt Display.
-* Addition of auto-scrolling for the text fields that exceed length.
-* Removal of the window title bar (it is, after all, full screen)
-* Set screen cursor to BlankCursor (it is, after all, a touch screen)
+- Modification of ui to all black background by default.
+- Addition of Previous / Play / Pause / Next buttons
+- Addition of auto-scrolling for the text fields that exceed field length.
+- Removal of the window title bar (it is, after all, full screen)
+- Set screen cursor to BlankCursor (it is, after all, a touch screen)
 
 ## My Setup
 
 Raspberry 4b with official Raspberry 4b 7" touch screen and a 3d printed black bezel/case/stand combo for the pi+7" screen from thingiverse.
+- https://www.thingiverse.com/thing:3823646 (touchscreen case RPI 4B)
+- https://www.thingiverse.com/thing:5364987 (45 degree stand)
+
 
 ## Usage
 
-Same usage notes as lrusak/shairport-display-qt:master however with the following extra information: 
-[code]
-Change /etc/xdg/lxsession/LXDE-pi/autostart from @lxpanel etc, to be:
+Same usage notes as lrusak/shairport-display-qt however with the following extra information: 
 
-@python3 /full/path/to/shairport-display-qt.py
+Change /etc/xdg/lxsession/LXDE-pi/autostart from @lxpanel etc, to set power management/screensaver off and simply run the app. If you need a terminal attach a keyboard and press ctrl+alt+T
+```
 @xset -dpms
-[/code]
+@python3 /full/path/to/shairport-display-qt.py
+```
 
 ## TODO
 
-* Add note on the best way to flip the entire orientation of the screen to match preference for cables etc
-* Add Volume control slider
-* Add notes on how to integrate this with 2 or 3 desktops and guestures for swiping to 2 or 3 other full screen apps
-* How best to remove the screen brightening / dimming options into a seperate process
-* Notes on other full screen X pi apps that could co-exist (internet radio? weather?)
+- Add note on the best way to flip the entire orientation of the screen to match preference for cables etc
+- Add Volume control slider
+- Add notes on how to integrate this with 2 or 3 desktops and guestures for swiping to 2 or 3 other full screen apps
+- How best to remove the screen brightening / dimming options into a seperate process
+- Notes on other full screen X pi apps that could co-exist (internet radio? weather?)
 
 ## DTB Patching
 
