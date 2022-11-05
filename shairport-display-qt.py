@@ -1,6 +1,6 @@
 #!/usr/bin/env /usr/bin/python3
 
-from PyQt5.QtWidgets import QApplication, QLabel, QWidget, QProgressBar, QDesktopWidget
+from PyQt5.QtWidgets import QApplication, QPushButton, QLabel, QWidget, QProgressBar, QDesktopWidget
 from PyQt5 import uic
 
 from PyQt5.QtCore import QTimer, Qt, QPropertyAnimation
@@ -14,6 +14,7 @@ import sys
 import os
 import time
 import logging
+import subprocess
 
 class ShairportSyncClient(QApplication):
 
@@ -62,15 +63,33 @@ class ShairportSyncClient(QApplication):
     self.progress = 0
     self.duration = 500 # miliseconds
     self.timer = None
+    self.incr = 0
+
+    self.keys = [ "art mpris:artUrl",
+             "title xesam:title",
+             "artist xesam:artist",
+             "album xesam:album",
+             "length mpris:length" ];
 
     self.window = uic.loadUi(os.path.dirname(argv[0]) + "/shairport-display.ui")
     # self.window.resize(QDesktopWidget().availableGeometry().size());
+    self.window.setWindowFlag(Qt.FramelessWindowHint)
     self.window.setStyleSheet("background-color : white; color : black;");
     self.window.setAutoFillBackground(True);
     self.window.resizeEvent = self.onResize
     self.window.keyPressEvent = self.keyPressEvent
     self.window.resize(800, 480)
+    self.window.setCursor(Qt.BlankCursor)
     self.window.show()
+
+    self.B1 = self.window.findChild(QPushButton, 'b1')
+    self.B2 = self.window.findChild(QPushButton, 'b2')
+    self.B3 = self.window.findChild(QPushButton, 'b3')
+    self.B4 = self.window.findChild(QPushButton, 'b4')
+    self.B1.clicked.connect(self.b1)
+    self.B2.clicked.connect(self.b2)
+    self.B3.clicked.connect(self.b3)
+    self.B4.clicked.connect(self.b4)
 
     self.Art = self.window.findChild(QLabel, 'CoverArt')
 
@@ -100,6 +119,11 @@ class ShairportSyncClient(QApplication):
 
     self.window.destroyed.connect(self.quit)
 
+  def rotate(self, input, d):
+    Lfirst = " .. " + input[0 : d]
+    Lsecond = input[d :]
+    return (Lsecond + Lfirst)
+
   def onResize(self, event):
 
     size = self.window.size();
@@ -122,20 +146,52 @@ class ShairportSyncClient(QApplication):
       else:
         self.Art.setPixmap(pixmap.scaledToHeight(int((size.width() / 2) - 40)))
 
+  def Remote(self):
+    the_object = self._bus.get_object("org.gnome.ShairportSync", "/org/gnome/ShairportSync")
+    return dbus.Interface(the_object, "org.gnome.ShairportSync.RemoteControl")
+
+  def b1(self):
+    self.log.debug("previous")
+    self.Remote().Previous()
+
+  def b2(self):
+    self.log.debug("pause")
+    self.Remote().Pause()
+
+  def b3(self):
+    self.log.debug("play")
+    self.Remote().Play()
+
+  def b4(self):
+    self.log.debug("next")
+    self.Remote().Next()
+
   def event(self, e):
     return QApplication.event(self, e)
 
   def _tickEvent(self):
 
+    if len(self.metadata["title"]) > 22:
+      newtitle = self.rotate(self.metadata["title"], self.incr % len(self.metadata["title"]))
+      self.Title.setText(newtitle)
+
+    if len(self.metadata["album"]) > 25:
+      newtitle = self.rotate(self.metadata["album"], self.incr % len(self.metadata["album"]))
+      self.Album.setText(newtitle)
+
+    if len(self.metadata["artist"]) > 25:
+      newtitle = self.rotate(self.metadata["artist"], self.incr % len(self.metadata["artist"]))
+      self.Artist.setText(newtitle)
+
+    self.incr = self.incr + 1
+    
     if self.length != 0:
       # self.animation.setStartValue(self.progress / self.length * 100.0)
 
       self.progress += self.duration / 1000.0
 
       # self.animation.setEndValue(self.progress / self.length * 100.0)
-
       # self.log.debug("progress: %f", self.progress / self.length * 100.0)
-
       # self.log.debug("elapsed: %s", str(datetime.timedelta(seconds=self.progress)))
 
       self.ProgressBar.setValue(int(self.progress / self.length * 100))
@@ -228,17 +284,22 @@ class ShairportSyncClient(QApplication):
       self.log.warning("shairport-sync is not running on the bus")
       return
 
-    try:
-      metadata = { "art" : result['mpris:artUrl'].split("://")[-1],
-                   "title" : result['xesam:title'],
-                   "artist" : ", ".join(result['xesam:artist']),
-                   "album" : result['xesam:album'],
-                   "length" : result['mpris:length'],
-                 }
+    metadata = { "art" : "",
+                 "title" : "",
+                 "artist" : "",
+                 "album" : "",
+                 "length" : 0 }
 
-    except KeyError:
-      self.log.warning("no metadata available to initialize the display")
-      return
+    for k in self.keys:
+       f = k.split(" ")[0];
+       t = k.split(" ")[1];
+       if t in result:
+         if f == 'artist':
+           metadata[f] = ", ".join(result[t])
+         else:
+           metadata[f] = result[t]
+
+    metadata['art'] = metadata['art'].split("://")[-1];
 
     self._set_metadata(metadata)
 
@@ -257,6 +318,7 @@ class ShairportSyncClient(QApplication):
     for key in metadata:
       self.log.info("%s: %s", key, metadata[key])
 
+    self.metadata = metadata
     self.Title.setText(metadata["title"])
     self.Artist.setText(metadata["artist"])
     self.Album.setText(metadata["album"])
@@ -318,18 +380,24 @@ class ShairportSyncClient(QApplication):
     if interface == "org.gnome.ShairportSync.RemoteControl":
 
       if 'Metadata' in data:
+        dd = data['Metadata']
 
-        try:
-          metadata = { "art" : data['Metadata']['mpris:artUrl'].split("://")[-1],
-                       "title" : data['Metadata']['xesam:title'],
-                       "artist" : ', '.join(data['Metadata']['xesam:artist']),
-                       "album" : data['Metadata']['xesam:album'],
-                       "length" : data['Metadata']['mpris:length'],
-                     }
+        metadata = { "art" : "",
+                     "title" : "",
+                     "artist" : "",
+                     "album" : "",
+                     "length" : 0 }
 
-        except KeyError:
-          self.log.warning("no metadata available to initialize the display")
-          return
+        for k in self.keys:
+           f = k.split(" ")[0];
+           t = k.split(" ")[1];
+           if t in dd:
+             if f == 'artist':
+               metadata[f] = ", ".join(dd[t])
+             else:
+               metadata[f] = dd[t]
+
+        metadata['art'] = metadata['art'].split("://")[-1];
 
         self._set_metadata(metadata)
 
@@ -348,7 +416,7 @@ class ShairportSyncClient(QApplication):
 
         self.progress = elapsed
 
-        self._start_timer()
+      self._start_timer()
 
       if 'PlayerState' in data:
         state = data['PlayerState']
