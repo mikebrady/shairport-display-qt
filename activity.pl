@@ -32,7 +32,10 @@ while(1) {
   	} else {
 		$off = 1;
 	}
-	$idle_ct += ($off ? 1 : 0);
+
+	$idle_ct++ if ($off);
+	$idle_ct = 0 if (!$off);
+
 	if (!$idle_ct && $brite != 200) {
 		open(B, ">$BKLIGHT");
 		print B "200\n";
