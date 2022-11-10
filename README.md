@@ -3,6 +3,7 @@
 A simple app to be used with [shairport-sync](https://github.com/mikebrady/shairport-sync) with the pi 4b plus the official Raspberry Pi 7" 800 pixel touchscreen
 
 ![Example App Photo](shairport-display.png)
+![Enclosure Photo](shairport-display-back.png)
 
 Table of Contents
 =================
@@ -27,7 +28,7 @@ A UI that displays the current track for shairport-sync is an obvious need for a
 ## Changes from original
 
 - Modification of ui to all black background by default.
-- Addition of Previous / Play / Pause / Next buttons
+- Addition of Previous / PlayPause / Next buttons
 - Addition of auto-scrolling for the text fields that exceed field length.
 - Removal of the window title bar (it is, after all, full screen)
 - Set screen cursor to BlankCursor (it is, after all, a touch screen)
