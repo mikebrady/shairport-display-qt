@@ -4,7 +4,7 @@ from PyQt5.QtWidgets import QApplication, QPushButton, QLabel, QWidget, QProgres
 from PyQt5 import uic
 
 from PyQt5.QtCore import QTimer, Qt, QPropertyAnimation, QSize
-from PyQt5.QtGui import QPixmap, QFont, QPalette, QLinearGradient, QBrush, QColor, QIcon
+from PyQt5.QtGui import QPixmap, QFont, QPalette, QLinearGradient, QBrush, QColor, QIcon, QPainter
 
 from PIL import Image
 
@@ -18,27 +18,32 @@ import time
 import logging
 import subprocess
 import colorsys
+import argparse
+
+# Art dominant color gradient -- 90% brightness to 20% brightnessd
+GRADIENT_TOP = 0.9
+GRADIENT_BOTTOM = 0.2
 
 class ShairportSyncClient(QApplication):
 
   def __init__(self, argv):
 
+    super().__init__(argv)
+
+    self.log = logging.getLogger("shairport-display")
     self.ArtPath = None
     self.Title = None
     self.Artist = None
     self.Album = None
-
     self.playing = False
-
-    super().__init__(argv)
-
-    self.log = logging.getLogger("shairport-display")
 
     self.format = logging.Formatter('%(asctime)s - [%(levelname)s] - %(message)s', "%Y-%m-%d %H:%M:%S")
 
     self.handler = logging.StreamHandler(stream=sys.stdout)
     self.handler.setFormatter(self.format)
-    self.handler.setLevel(logging.DEBUG)
+
+    # logging.DEBUG or logging.INFO
+    self.handler.setLevel(logging.INFO)
 
     self.log.addHandler(self.handler)
     self.log.setLevel(logging.DEBUG)
@@ -47,16 +52,6 @@ class ShairportSyncClient(QApplication):
 
     self.backlight = ""
 
-    for (topdir, backlights, _) in os.walk("/sys/class/backlight/"):
-      for backlight in backlights:
-        with open(topdir + backlight + "/max_brightness", "r") as f:
-          self.backlight = topdir + backlight
-          self.max_brightness = f.read()
-
-    if self.backlight:
-      self.log.debug("using backlight: '" + self.backlight + "'")
-    else:
-      self.log.debug("no backlight found, backlight control disabled")
 
     self.properties_changed = None
 
@@ -69,6 +64,8 @@ class ShairportSyncClient(QApplication):
     self.duration = 500 # miliseconds
     self.timer = None
     self.incr = 0
+    self.clientname = ""
+    self.servicename = ""
 
     self.keys = [ "art mpris:artUrl",
              "title xesam:title",
@@ -76,15 +73,40 @@ class ShairportSyncClient(QApplication):
              "album xesam:album",
              "length mpris:length" ];
 
-    self.window = uic.loadUi(os.path.dirname(argv[0]) + "/shairport-display.ui")
-    # self.window.resize(QDesktopWidget().availableGeometry().size());
-    self.window.setWindowFlag(Qt.FramelessWindowHint)
+    try:
+      self.window = uic.loadUi(os.path.dirname(argv[0]) + "./shairport-display.ui")
+    except:
+      print("Cannot find shairport-display.ui or syntax error in ui file")
+      exit(1)
+
+    # get command line args
+    parser = argparse.ArgumentParser(description='Shairport Sync Display')
+    parser.add_argument('--config', choices=['desktop', 'raspberrypiofficial7inchscreen'], default='raspberrypiofficial7inchscreen')
+    args = parser.parse_args()
+
+    self.desktopmode = False
+    if args.config.lower() == "desktop":
+      self.desktopmode = True
+
+    if self.desktopmode == False:
+      self.window.resize(QDesktopWidget().availableGeometry().size());
+      self.window.setWindowFlag(Qt.FramelessWindowHint)
+      self.window.setCursor(Qt.BlankCursor)
+      for (topdir, backlights, _) in os.walk("/sys/class/backlight/"):
+        for backlight in backlights:
+          with open(topdir + backlight + "/max_brightness", "r") as f:
+            self.backlight = topdir + backlight
+            self.max_brightness = f.read()
+      if self.backlight:
+        self.log.debug("using backlight: '" + self.backlight + "'")
+      else:
+        self.log.debug("no backlight found, backlight control disabled")
+
     #self.window.setStyleSheet("background-color : black; color : black;");
+
     self.window.setAutoFillBackground(True);
     self.window.resizeEvent = self.onResize
     self.window.keyPressEvent = self.keyPressEvent
-    self.window.resize(800, 480)
-    self.window.setCursor(Qt.BlankCursor)
     self.window.show()
 
     self.metadata = { }
@@ -94,7 +116,6 @@ class ShairportSyncClient(QApplication):
 
     #self.CW.setStyleSheet("");
     #self.log.debug(self.CW)
-    
     #self.CW.setPalette(p)
 
     self.B1 = self.window.findChild(QPushButton, 'b1')
@@ -104,13 +125,6 @@ class ShairportSyncClient(QApplication):
     self.B1.setText("")
     self.B1.setIcon(QIcon("fff.png"))
     self.B1.setIconSize(QSize(40, 40))
-
-    #pixmapi = getattr(QStyle, "SP_MediaSeekBackward")
-    #pixmapi.fill((QColor('red')))
-    #pixmapi.setMask(mask)
-    #icon = self.window.style().standardIcon(pixmapi)
-    #self.B1.setIcon(icon)
-    #self.B1.setIconSize(QSize(40, 40))
 
     self.B3.setText("")
     self.B3.setIcon(QIcon("ff.png"))
@@ -130,19 +144,19 @@ class ShairportSyncClient(QApplication):
     self.B3.clicked.connect(self.b3)
     # self.B4.clicked.connect(self.b4)
 
-    #self.B1.setStyleSheet("border-radius: 50px; border: 2px solid white; color:white; background:grey");
-    #self.B2.setStyleSheet("border-radius: 50px; border: 2px solid white; color:white; background:grey");
-    #self.B3.setStyleSheet("border-radius: 50px; border: 2px solid white; color:white; background:grey");
-
     self.Art = self.window.findChild(QLabel, 'CoverArt')
 
     self.Title = self.window.findChild(QLabel, 'Title')
-    self.Title.setFont(QFont("Montserrat", 20, QFont.Bold))
+    self.Title.setFont(QFont("Helvetica Neue", 16, QFont.Bold))
 
     self.Artist = self.window.findChild(QLabel, 'Artist')
-    self.Artist.setFont(QFont("Montserrat", 16, QFont.Normal))
+    self.Artist.setFont(QFont("Helvetica Neue", 14, QFont.Normal))
+
     self.Album = self.window.findChild(QLabel, 'Album')
-    self.Album.setFont(QFont("Montserrat", 16, QFont.Normal))
+    self.Album.setFont(QFont("Helvetica Neue", 14, QFont.Normal))
+
+    self.Client = self.window.findChild(QLabel, 'Client')
+    self.Service = self.window.findChild(QLabel, 'Service')
 
     self.ProgressBar = self.window.findChild(QProgressBar, 'ProgressBar')
     self.ProgressBar.setMaximumHeight(7)
@@ -159,6 +173,7 @@ class ShairportSyncClient(QApplication):
 
     self._clear_display()
     self._initialize_display()
+    self._start_timer()
 
     self.window.destroyed.connect(self.quit)
 
@@ -170,8 +185,8 @@ class ShairportSyncClient(QApplication):
   def onResize(self, event):
 
     size = self.window.size();
-    self.log.info("width: %d", size.width())
-    self.log.info("height: %d", size.height())
+    self.log.info("resize width: %d", size.width())
+    self.log.info("resize height: %d", size.height())
 
     if self.Title is not None:
       self.Title.setMaximumWidth(int(size.width() / 2))
@@ -185,9 +200,9 @@ class ShairportSyncClient(QApplication):
     if self.ArtPath is not None:
       pixmap = QPixmap(self.ArtPath)
       if pixmap.width() >= pixmap.height():
-        self.Art.setPixmap(pixmap.scaledToWidth(int((size.width() / 2) - 40)))
+        self.Art.setPixmap(pixmap.scaledToWidth(int((size.width() / 2) - 100),Qt.SmoothTransformation))
       else:
-        self.Art.setPixmap(pixmap.scaledToHeight(int((size.width() / 2) - 40)))
+        self.Art.setPixmap(pixmap.scaledToHeight(int((size.width() / 2) - 100),Qt.SmoothTransformation))
 
   def Remote(self):
     the_object = self._bus.get_object("org.gnome.ShairportSync", "/org/gnome/ShairportSync")
@@ -198,7 +213,7 @@ class ShairportSyncClient(QApplication):
     self.Remote().Previous()
 
   def b2(self):
-    self.log.debug("pause")
+    self.log.debug("playpause")
     self.Remote().PlayPause()
 
   def b3(self):
@@ -225,15 +240,36 @@ class ShairportSyncClient(QApplication):
 
   def _tickEvent(self):
 
+    if (self.incr % 10) == 0:
+      if self._get_sps_info(".RemoteControl", "Available") != 0:
+         self.clientname = self._get_sps_info(".RemoteControl", "ClientName")
+         self.servicename = self._get_sps_info("", "ServiceName")
+
+         if self.clientname != None:
+           self.Client.setText(self.clientname)
+         else:
+           self.Client.setText("?")
+
+         if self.servicename != None:
+           self.Service.setText(self.servicename)
+         else:
+           self.Service.setText("?")
+
+         s = self._get_sps_info(".RemoteControl", "PlayerState")
+         self._fixplaypause(s)
+      else:
+         self.log.debug("Remote control is not available")
+         #self._clear_display()
+
     if "title" in self.metadata and len(self.metadata["title"]) > 22:
       newtitle = self.rotate(self.metadata["title"], self.incr % len(self.metadata["title"]))
       self.Title.setText(newtitle)
 
-    if "album" in self.metadata and len(self.metadata["album"]) > 25:
+    if "album" in self.metadata and len(self.metadata["album"]) > 30:
       newtitle = self.rotate(self.metadata["album"], self.incr % len(self.metadata["album"]))
       self.Album.setText(newtitle)
 
-    if "artist" in self.metadata and len(self.metadata["artist"]) > 25:
+    if "artist" in self.metadata and len(self.metadata["artist"]) > 30:
       newtitle = self.rotate(self.metadata["artist"], self.incr % len(self.metadata["artist"]))
       self.Artist.setText(newtitle)
 
@@ -241,18 +277,13 @@ class ShairportSyncClient(QApplication):
     
     if self.length != 0:
       # self.animation.setStartValue(self.progress / self.length * 100.0)
-
       self.progress += self.duration / 1000.0
-
       # self.animation.setEndValue(self.progress / self.length * 100.0)
       # self.log.debug("progress: %f", self.progress / self.length * 100.0)
       # self.log.debug("elapsed: %s", str(datetime.timedelta(seconds=self.progress)))
-
       self.ProgressBar.setValue(int(self.progress / self.length * 100))
-
       # self.animation.setDuration(self.duration)
       # self.animation.start()
-
       elapsed = round(self.progress)
 
       elapsed_time = datetime.timedelta(seconds=elapsed)
@@ -336,7 +367,7 @@ class ShairportSyncClient(QApplication):
       result = self._bus.call_blocking("org.gnome.ShairportSync", "/org/gnome/ShairportSync", "org.freedesktop.DBus.Properties", "Get", "ss", ["org.gnome.ShairportSync.RemoteControl", "Metadata"])
     except dbus.exceptions.DBusException:
       self.log.warning("shairport-sync is not running on the bus")
-      return
+      exit(1)
 
     metadata = { "art" : "",
                  "title" : "",
@@ -394,14 +425,13 @@ class ShairportSyncClient(QApplication):
       new_rgb_int = [int(hex_value, 16) + brightness_offset for hex_value in rgb_hex]
       new_rgb_int = [min([255, max([0, i])]) for i in new_rgb_int] # make sure new values are between 0 and 255
       return self.rgb_to_hex(int(new_rgb_int[0]), int(new_rgb_int[1]), int(new_rgb_int[2]))
-      # hex() produces "0x88", we want just "88"
 
   def _set_metadata(self, metadata):
 
     self.log.debug("Metadata available")
 
     for key in metadata:
-      self.log.info("%s: %s", key, metadata[key])
+      self.log.info("metadata %s: %s", key, metadata[key])
 
     if len(metadata["title"]) == 0:
       return
@@ -410,9 +440,16 @@ class ShairportSyncClient(QApplication):
     self.Title.setText(metadata["title"])
     self.Artist.setText(metadata["artist"])
     self.Album.setText(metadata["album"])
-    self.ProgressBar.setVisible(True)
-    self.Elapsed.setVisible(True)
-    self.Remaining.setVisible(True)
+
+    if metadata["length"] > 0:
+      self.ProgressBar.setVisible(True)
+      self.Elapsed.setVisible(True)
+      self.Remaining.setVisible(True)
+    else:
+      self.ProgressBar.setVisible(False)
+      self.Elapsed.setVisible(False)
+      self.Remaining.setVisible(False)
+
     self.B1.setVisible(True)
     self.B2.setVisible(True)
     self.B3.setVisible(True)
@@ -423,13 +460,24 @@ class ShairportSyncClient(QApplication):
     self.Artist.setMaximumWidth(int(size.width() / 2))
     self.Album.setMaximumWidth(int(size.width() / 2))
 
+    self.log.info("track length us: %s", str(datetime.timedelta(microseconds=metadata["length"])))
+
+    if metadata["art"] == None or len(metadata["art"]) == 0:
+      self.log.debug(" art path none ")
+      return
+
+    if self.ArtPath == metadata["art"]:
+      self.Art.setVisible(True)
+      self.log.debug(" art path already set ")
+      return
+ 
     self.ArtPath = metadata["art"]
     if len(self.ArtPath):
-      self.Art.setVisible(True)
+
       dominantcolor = self.average_image_color(self.ArtPath)
       (h, l, s) = colorsys.rgb_to_hls(dominantcolor[0], dominantcolor[1], dominantcolor[2])
-      l = l * 0.80
-      l2 = l * 0.50
+      l = l * GRADIENT_TOP
+      l2 = l * GRADIENT_BOTTOM
       (r, g, b) = colorsys.hls_to_rgb(h, l, s)
       (r2, g2, b2) = colorsys.hls_to_rgb(h, l2, s)
       col1 = self.rgb_to_hex(int(r), int(g), int(b))
@@ -438,16 +486,38 @@ class ShairportSyncClient(QApplication):
 
       pixmap = QPixmap(self.ArtPath)
       if pixmap.width() >= pixmap.height():
-        self.Art.setPixmap(pixmap.scaledToWidth(int((size.width() / 2) - 40)))
+        pixmap = pixmap.scaledToWidth(int((size.width() / 2) - 100),Qt.SmoothTransformation)
       else:
-        self.Art.setPixmap(pixmap.scaledToHeight(int((size.width() / 2) - 40)))
+        pixmap = pixmap.scaledToHeight(int((size.width() / 2) - 100),Qt.SmoothTransformation)
+      radius = 15
+
+      # create empty pixmap of same size as original 
+      rounded = QPixmap(pixmap.size())
+      rounded.fill(QColor("transparent"))
+
+      # draw rounded rect on new pixmap using original pixmap as brush
+      painter = QPainter(rounded)
+      painter.setRenderHint(QPainter.Antialiasing)
+      painter.setBrush(QBrush(pixmap))
+      painter.setPen(Qt.NoPen)
+      painter.drawRoundedRect(pixmap.rect(), radius, radius)
+
+      # set pixmap of label
+      self.Art.setPixmap(rounded)
+
+      # free stuff up
+      del painter
+      del rounded
+
       shadow = QGraphicsDropShadowEffect()
       shadow.setBlurRadius(40)
+      shadow.setColor(QColor(0, 0, 0, 180))
       self.Art.setGraphicsEffect(shadow)
+
+      self.Art.setVisible(True)
+
     else:
       self.Art.setVisible(False)
-      
-    self.log.info("length: %s", str(datetime.timedelta(microseconds=metadata["length"])))
 
   def _stop_timer(self):
     if self.timer is not None:
@@ -465,20 +535,37 @@ class ShairportSyncClient(QApplication):
 
   def _clear_display(self):
 
-    self._set_backlight(False)
+    #self._set_backlight(False)
 
+    self.ArtPath = None
     self.Art.clear()
     self.Title.clear()
     self.Artist.clear()
     self.Album.clear()
     self.Elapsed.clear();
     self.Remaining.clear();
+
     self.ProgressBar.setVisible(False);
     self.Elapsed.setVisible(False)
     self.Remaining.setVisible(False)
     self.B1.setVisible(False);
     self.B2.setVisible(False)
     self.B3.setVisible(False)
+
+  def _fixplaypause(self, state):
+    self.log.debug("fix play pause %s", state)
+    if state == "Playing":
+      if self.playing == False:
+        self._start_timer()
+        self.log.debug("SET PAUSE")
+        self.B2.setIcon(QIcon("pause.png"))
+        self.playing = True
+    else:
+      if self.playing:
+        self._stop_timer()
+        self.log.debug("SET PLAY")
+        self.B2.setIcon(QIcon("play.png"))
+        self.playing = False
 
   def _display_metadata(self, *args, **kwargs):
 
@@ -521,7 +608,7 @@ class ShairportSyncClient(QApplication):
         self.length = round((end - start) / 44100)
         elapsed = round((current - start) / 44100)
 
-        self.log.debug("length: %s", str(datetime.timedelta(seconds=self.length)))
+        self.log.debug("track length seconds: %s", str(datetime.timedelta(seconds=self.length)))
         self.log.debug("elapsed: %s", str(datetime.timedelta(seconds=elapsed)))
 
         self.progress = elapsed
@@ -530,26 +617,7 @@ class ShairportSyncClient(QApplication):
 
       if 'PlayerState' in data:
         state = data['PlayerState']
-        if state == "Playing":
-          if self.playing == False:
-            self._start_timer()
-            self.log.debug("SET PAUSE")
-            self.B2.setIcon(QIcon("pause.png"))
-          self.playing = True
-        else:
-          if self.playing:
-            self._stop_timer()
-            self.log.debug("SET PLAY")
-            self.B2.setIcon(QIcon("play.png"))
-          self.playing = False
-
-        #self.log.info("PlayerState: %s", state)
-        #if state == "Stopped":
-        #  self._stop_timer()
-        #elif state == "Playing":
-        #  self._start_timer()
-        #elif state == "Paused":
-        #  pass
+        self._fixplaypause(state)
 
     if interface == "org.gnome.ShairportSync":
 
