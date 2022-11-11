@@ -46,7 +46,7 @@ class ShairportSyncClient(QApplication):
     self.handler.setLevel(logging.INFO)
 
     self.log.addHandler(self.handler)
-    self.log.setLevel(logging.DEBUG)
+    self.log.setLevel(logging.INFO)
 
     self.log.info("Starting application")
 
@@ -116,6 +116,7 @@ class ShairportSyncClient(QApplication):
 
     #self.CW.setStyleSheet("");
     #self.log.debug(self.CW)
+    
     #self.CW.setPalette(p)
 
     self.B1 = self.window.findChild(QPushButton, 'b1')
@@ -555,6 +556,9 @@ class ShairportSyncClient(QApplication):
   def _fixplaypause(self, state):
     self.log.debug("fix play pause %s", state)
     if state == "Playing":
+      self.B1.setVisible(True)
+      self.B2.setVisible(True)
+      self.B3.setVisible(True)
       if self.playing == False:
         self._start_timer()
         self.log.debug("SET PAUSE")
@@ -618,6 +622,7 @@ class ShairportSyncClient(QApplication):
       if 'PlayerState' in data:
         state = data['PlayerState']
         self._fixplaypause(state)
+
 
     if interface == "org.gnome.ShairportSync":
 
