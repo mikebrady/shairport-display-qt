@@ -74,7 +74,7 @@ class ShairportSyncClient(QApplication):
              "length mpris:length" ];
 
     try:
-      self.window = uic.loadUi(os.path.dirname(argv[0]) + "./shairport-display.ui")
+      self.window = uic.loadUi(os.path.dirname(argv[0]) + "/shairport-display.ui")
     except:
       print("Cannot find shairport-display.ui or syntax error in ui file")
       exit(1)
