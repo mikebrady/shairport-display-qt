@@ -1,6 +1,6 @@
 #!/usr/bin/env /usr/bin/python3
 
-from PyQt5.QtWidgets import QApplication, QPushButton, QLabel, QWidget, QProgressBar, QDesktopWidget, QStyle, QGraphicsDropShadowEffect
+from PyQt5.QtWidgets import QApplication, QSlider, QPushButton, QLabel, QWidget, QProgressBar, QDesktopWidget, QStyle, QGraphicsDropShadowEffect
 from PyQt5 import uic
 
 from PyQt5.QtCore import QTimer, Qt, QPropertyAnimation, QSize
@@ -46,12 +46,12 @@ class ShairportSyncClient(QApplication):
     self.handler.setLevel(logging.INFO)
 
     self.log.addHandler(self.handler)
-    self.log.setLevel(logging.INFO)
+    self.log.setLevel(logging.DEBUG)
 
     self.log.info("Starting application")
 
     self.backlight = ""
-
+    self.DisplayCleared = True
 
     self.properties_changed = None
 
@@ -66,12 +66,14 @@ class ShairportSyncClient(QApplication):
     self.incr = 0
     self.clientname = ""
     self.servicename = ""
+    self.volwanted = -10.0
+    self.volsent = -10.0
 
     self.keys = [ "art mpris:artUrl",
-             "title xesam:title",
-             "artist xesam:artist",
-             "album xesam:album",
-             "length mpris:length" ];
+                  "title xesam:title",
+                  "artist xesam:artist",
+                  "album xesam:album",
+                  "length mpris:length" ];
 
     try:
       self.window = uic.loadUi(os.path.dirname(argv[0]) + "/shairport-display.ui")
@@ -114,14 +116,14 @@ class ShairportSyncClient(QApplication):
     self.CW = self.window.findChild(QWidget, 'centralwidget')
     self.CW.setStyleSheet("#centralwidget {background: black}");
 
-    #self.CW.setStyleSheet("");
-    #self.log.debug(self.CW)
-    
-    #self.CW.setPalette(p)
-
     self.B1 = self.window.findChild(QPushButton, 'b1')
     self.B2 = self.window.findChild(QPushButton, 'b2')
     self.B3 = self.window.findChild(QPushButton, 'b3')
+
+    self.window.findChild(QPushButton, "v1").setIcon(QIcon("mute.png"))
+    self.window.findChild(QPushButton, "v2").setIcon(QIcon("vol.png"))
+    self.window.findChild(QPushButton, "v1").setIconSize(QSize(20,20))
+    self.window.findChild(QPushButton, "v2").setIconSize(QSize(20,20))
 
     self.B1.setText("")
     self.B1.setIcon(QIcon("fff.png"))
@@ -144,6 +146,9 @@ class ShairportSyncClient(QApplication):
     self.B2.clicked.connect(self.b2)
     self.B3.clicked.connect(self.b3)
     # self.B4.clicked.connect(self.b4)
+
+    self.Vol = self.window.findChild(QSlider, 'Vol')
+    self.Vol.valueChanged.connect(self.vol)
 
     self.Art = self.window.findChild(QLabel, 'CoverArt')
 
@@ -175,6 +180,10 @@ class ShairportSyncClient(QApplication):
     self._clear_display()
     self._initialize_display()
     self._start_timer()
+
+    self.B1.setVisible(True)
+    self.B2.setVisible(True)
+    self.B3.setVisible(True)
 
     self.window.destroyed.connect(self.quit)
 
@@ -209,6 +218,10 @@ class ShairportSyncClient(QApplication):
     the_object = self._bus.get_object("org.gnome.ShairportSync", "/org/gnome/ShairportSync")
     return dbus.Interface(the_object, "org.gnome.ShairportSync.RemoteControl")
 
+  def vol(self):
+    self.volwanted = 0.0 - ((100-self.Vol.value())/100.0 * 30.0)
+    self.log.debug("want volume %d", self.volwanted)
+   
   def b1(self):
     self.log.debug("previous")
     self.Remote().Previous()
@@ -242,6 +255,12 @@ class ShairportSyncClient(QApplication):
   def _tickEvent(self):
 
     if (self.incr % 10) == 0:
+      try:
+        self.volsent = self._bus.call_blocking("org.gnome.ShairportSync", "/org/gnome/ShairportSync", "org.freedesktop.DBus.Properties", "Get", "ss", ["org.gnome.ShairportSync", "Volume"])
+        self.Vol.setValue((30.0 + self.volsent)/30.0 * 100)
+      except:
+        self.log.debug("No volume available")
+
       if self._get_sps_info(".RemoteControl", "Available") != 0:
          self.clientname = self._get_sps_info(".RemoteControl", "ClientName")
          self.servicename = self._get_sps_info("", "ServiceName")
@@ -260,7 +279,11 @@ class ShairportSyncClient(QApplication):
          self._fixplaypause(s)
       else:
          self.log.debug("Remote control is not available")
-         #self._clear_display()
+         # self._clear_display()
+
+    if self.volwanted != self.volsent:
+      v = self._bus.call_blocking("org.gnome.ShairportSync", "/org/gnome/ShairportSync", "org.freedesktop.DBus.Properties", "Set", "ssv", ["org.gnome.ShairportSync", "Volume", self.volwanted])
+      self.volsent = self.volwanted 
 
     if "title" in self.metadata and len(self.metadata["title"]) > 22:
       newtitle = self.rotate(self.metadata["title"], self.incr % len(self.metadata["title"]))
@@ -299,17 +322,12 @@ class ShairportSyncClient(QApplication):
     return True
 
   def quit(self, *args):
-
     self.log.info("Stopping application")
-
     self.properties_changed.remove()
-
     self._set_backlight(False)
-
     QApplication.quit()
 
   def _setup_loop(self):
-
     self._loop = dbus.mainloop.glib.DBusGMainLoop(set_as_default=True)
 
   def _setup_bus(self):
@@ -363,6 +381,9 @@ class ShairportSyncClient(QApplication):
   def _initialize_display(self):
 
     self._set_backlight(True)
+    self.DisplayCleared = False
+    for tl in QApplication.topLevelWidgets():
+        tl.setVisible(True)
 
     try:
       result = self._bus.call_blocking("org.gnome.ShairportSync", "/org/gnome/ShairportSync", "org.freedesktop.DBus.Properties", "Get", "ss", ["org.gnome.ShairportSync.RemoteControl", "Metadata"])
@@ -390,7 +411,6 @@ class ShairportSyncClient(QApplication):
     self._set_metadata(metadata)
 
   def _setup_signals(self):
-
     self.properties_changed = self._bus.add_signal_receiver(handler_function=self._display_metadata,
                                                             signal_name='PropertiesChanged',
                                                             dbus_interface='org.freedesktop.DBus.Properties',
@@ -427,17 +447,38 @@ class ShairportSyncClient(QApplication):
       new_rgb_int = [min([255, max([0, i])]) for i in new_rgb_int] # make sure new values are between 0 and 255
       return self.rgb_to_hex(int(new_rgb_int[0]), int(new_rgb_int[1]), int(new_rgb_int[2]))
 
+  def _meta_changed(self, metadata):
+
+    for k in self.keys:
+      key = k.split(" ")[0];
+      if key in metadata:
+        if isinstance(metadata[key], str) and len(metadata[key]) == 0:
+           self.log.debug("length is %s %d", metadata[key], len(metadata[key]))
+           pass
+        if key not in self.metadata or self.metadata[key] != metadata[key]:
+          if key not in self.metadata:
+            self.log.debug("%s not in self.metadata", key)
+          else:
+            self.log.debug("%s IS in self.metadata self.metadata[art]=%s", key, self.metadata['art'])
+          self.log.debug("metadata changed 1 %s", key)
+          return True
+      if key not in metadata:
+        if key in self.metadata or self.metadata[key] != metadata[key]:
+          self.log.debug("metadata changed 2 %s", key)
+          return True
+    self.log.debug("metadata not changed")
+    return False
+    
   def _set_metadata(self, metadata):
 
-    self.log.debug("Metadata available")
-
+    if not self._meta_changed(metadata):
+      return;
+    
     for key in metadata:
       self.log.info("metadata %s: %s", key, metadata[key])
 
-    if len(metadata["title"]) == 0:
-      return
-
     self.metadata = metadata
+
     self.Title.setText(metadata["title"])
     self.Artist.setText(metadata["artist"])
     self.Album.setText(metadata["album"])
@@ -451,6 +492,7 @@ class ShairportSyncClient(QApplication):
       self.Elapsed.setVisible(False)
       self.Remaining.setVisible(False)
 
+    self.log.debug(" reset art stuff ")
     self.B1.setVisible(True)
     self.B2.setVisible(True)
     self.B3.setVisible(True)
@@ -461,20 +503,15 @@ class ShairportSyncClient(QApplication):
     self.Artist.setMaximumWidth(int(size.width() / 2))
     self.Album.setMaximumWidth(int(size.width() / 2))
 
-    self.log.info("track length us: %s", str(datetime.timedelta(microseconds=metadata["length"])))
+    self.log.info("track length us: %s %d", str(datetime.timedelta(microseconds=metadata["length"])), metadata["length"])
 
     if metadata["art"] == None or len(metadata["art"]) == 0:
       self.log.debug(" art path none ")
       return
 
-    if self.ArtPath == metadata["art"]:
-      self.Art.setVisible(True)
-      self.log.debug(" art path already set ")
-      return
- 
     self.ArtPath = metadata["art"]
-    if len(self.ArtPath):
 
+    if len(self.ArtPath):
       dominantcolor = self.average_image_color(self.ArtPath)
       (h, l, s) = colorsys.rgb_to_hls(dominantcolor[0], dominantcolor[1], dominantcolor[2])
       l = l * GRADIENT_TOP
@@ -515,11 +552,6 @@ class ShairportSyncClient(QApplication):
       shadow.setColor(QColor(0, 0, 0, 180))
       self.Art.setGraphicsEffect(shadow)
 
-      self.Art.setVisible(True)
-
-    else:
-      self.Art.setVisible(False)
-
   def _stop_timer(self):
     if self.timer is not None:
       self.log.debug("stopping timer")
@@ -536,59 +568,59 @@ class ShairportSyncClient(QApplication):
 
   def _clear_display(self):
 
-    #self._set_backlight(False)
+    # self._set_backlight(False)
 
     self.ArtPath = None
-    self.Art.clear()
-    self.Title.clear()
-    self.Artist.clear()
-    self.Album.clear()
-    self.Elapsed.clear();
-    self.Remaining.clear();
-
-    self.ProgressBar.setVisible(False);
-    self.Elapsed.setVisible(False)
-    self.Remaining.setVisible(False)
-    self.B1.setVisible(False);
-    self.B2.setVisible(False)
-    self.B3.setVisible(False)
+    for tl in QApplication.topLevelWidgets():
+        tl.setVisible(False)
+    self.DisplayCleared = True
 
   def _fixplaypause(self, state):
+
     self.log.debug("fix play pause %s", state)
+
     if state == "Playing":
-      self.B1.setVisible(True)
+      if self.DisplayCleared:
+        self.log.debug("wake up display")
+        self._initialize_display()
+        self._start_timer()
       self.B2.setVisible(True)
-      self.B3.setVisible(True)
+      tlen = self.metadata["length"]
+      if tlen == 0:
+        self.B1.setVisible(False)
+        self.B3.setVisible(False)
+      else:
+        self.B1.setVisible(True)
+        self.B3.setVisible(True)
       if self.playing == False:
         self._start_timer()
         self.log.debug("SET PAUSE")
         self.B2.setIcon(QIcon("pause.png"))
         self.playing = True
-    else:
+    elif state == "Paused":
       if self.playing:
-        self._stop_timer()
+        #self._stop_timer()
         self.log.debug("SET PLAY")
         self.B2.setIcon(QIcon("play.png"))
         self.playing = False
+    elif state == "Stopped":
+      self._clear_display()
+      self._stop_timer()
+      self.playing = False
 
   def _display_metadata(self, *args, **kwargs):
 
     interface = args[0]
     data = args[1]
+    metadata = { }
 
     self.log.debug("Recieved signal for %s", interface)
 
     if interface == "org.gnome.ShairportSync.RemoteControl":
 
       if 'Metadata' in data:
+        self.log.debug("metadata signal")
         dd = data['Metadata']
-
-        metadata = { "art" : "",
-                     "title" : "",
-                     "artist" : "",
-                     "album" : "",
-                     "length" : 0 }
-
         for k in self.keys:
            f = k.split(" ")[0];
            t = k.split(" ")[1];
@@ -597,12 +629,19 @@ class ShairportSyncClient(QApplication):
                metadata[f] = ", ".join(dd[t])
              else:
                metadata[f] = dd[t]
+             self.log.debug("set %s to %s", f, metadata[f])
+           else:
+             if f == 'length':
+               metadata[f] = 0
+             else:
+               metadata[f] = ""
 
         metadata['art'] = metadata['art'].split("://")[-1];
 
         self._set_metadata(metadata)
 
       if 'ProgressString' in data:
+        self.log.debug("progresstring signal")
         start, current, end = [int(x) for x in data['ProgressString'].split('/')]
 
         self.log.debug("start: %d", start)
@@ -617,14 +656,15 @@ class ShairportSyncClient(QApplication):
 
         self.progress = elapsed
 
-      self._start_timer()
+      #self._start_timer()
 
       if 'PlayerState' in data:
+        self.log.debug("playerstate signal")
         state = data['PlayerState']
         self._fixplaypause(state)
 
-
     if interface == "org.gnome.ShairportSync":
+      self.log.debug("org.gnome.ShairportSync signal")
 
       if "Active" in data:
         if data["Active"]:

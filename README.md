@@ -32,6 +32,7 @@ A UI that displays the current track for shairport-sync is an obvious need for a
 - Addition of auto-scrolling for the text fields that exceed field length.
 - Removal of the window title bar (it is, after all, full screen)
 - Set screen cursor to BlankCursor (it is, after all, a touch screen)
+- Volume slider
 
 ## My Setup
 
@@ -59,7 +60,6 @@ Change /etc/xdg/lxsession/LXDE-pi/autostart from @lxpanel etc, to set power mana
 ## TODO
 
 - Add note on the best way to flip the entire orientation of the screen to match preference for cables etc
-- Add Volume control slider
 - Add notes on how to integrate this with 2 or 3 desktops and guestures for swiping to 2 or 3 other full screen apps
 - How best to remove the screen brightening / dimming options into a seperate process
 - Notes on other full screen X pi apps that could co-exist (internet radio? weather?)
